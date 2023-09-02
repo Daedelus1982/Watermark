@@ -12,6 +12,16 @@ fun main() {
         println("The image and watermark dimensions are different.")
         return
     }
+    val transparencyColor = if (!watermarkImage.colorModel.hasAlpha()) {
+        println("Do you want to set a transparency color?")
+        if (readln() == "yes") {
+            watermarkTransparencyColor() ?: return
+        } else null
+    } else null
+    val useAlpha = if (watermarkImage.colorModel.hasAlpha()) {
+        println("Do you want to use the watermark's Alpha channel?")
+        readln() == "yes"
+    } else false
     val weight = getWeight() ?: return
     println("Input the output image filename (jpg or png extension):")
     val outfile = readln()
@@ -19,10 +29,23 @@ fun main() {
         println("The output file extension isn't \"jpg\" or \"png\".")
         return
     }
-    val finalImage = getWatermarkedImage(image, watermarkImage, weight)
+    val finalImage = getWatermarkedImage(image, watermarkImage, weight, useAlpha, transparencyColor)
     val imageFile = File(outfile)
     ImageIO.write(finalImage, imageFile.extension, imageFile)
     println("The watermarked image $outfile has been created.")
+}
+
+fun watermarkTransparencyColor(): Color? {
+    println("Input a transparency color ([Red] [Green] [Blue]):")
+    return try {
+        val rgb = readln().split(" ").map { it.toInt() }
+        if (rgb.count() != 3) throw IllegalStateException("wrong number of arguments")
+        rgb.forEach {if (it !in 0..255) throw IllegalStateException("values not in range")}
+        Color(rgb[0], rgb[1], rgb[2])
+    } catch(ex: Exception) {
+        println("The transparency color input is invalid.")
+        null
+    }
 }
 
 fun getImage(isWatermark: Boolean): BufferedImage? {
@@ -62,13 +85,14 @@ fun getWeight(): Int? {
     }
 }
 
-fun getWatermarkedImage(image: BufferedImage, watermarkImage: BufferedImage, weight: Int): BufferedImage {
+fun getWatermarkedImage(image: BufferedImage, watermarkImage: BufferedImage,
+                        weight: Int, useAlpha: Boolean, transparencyColor: Color?): BufferedImage {
     val cmbImage = BufferedImage(image.width, image.height, BufferedImage.TYPE_INT_RGB)
     for (y in 0 until image.height) {
         for (x in 0 until image.width) {
             val i = Color(image.getRGB(x, y))
-            val w = Color(watermarkImage.getRGB(x, y))
-            val color = Color(
+            val w = Color(watermarkImage.getRGB(x, y), useAlpha)
+            val color = if (w.alpha == 0 || w == transparencyColor) i else Color(
                 (weight * w.red + (100 - weight) * i.red) / 100,
                 (weight * w.green + (100 - weight) * i.green) / 100,
                 (weight * w.blue + (100 - weight) * i.blue) / 100

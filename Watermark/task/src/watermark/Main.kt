@@ -1,6 +1,7 @@
 package watermark
 
 import java.awt.Color
+import java.awt.Point
 import java.awt.image.BufferedImage
 import java.io.File
 import javax.imageio.ImageIO
@@ -8,8 +9,8 @@ import javax.imageio.ImageIO
 fun main() {
     val image = getImage(isWatermark = false) ?: return
     val watermarkImage = getImage(isWatermark = true) ?: return
-    if (image.width != watermarkImage.width || image.height != watermarkImage.height) {
-        println("The image and watermark dimensions are different.")
+    if (image.width < watermarkImage.width || image.height < watermarkImage.height) {
+        println("The watermark's dimensions are larger.")
         return
     }
     val transparencyColor = if (!watermarkImage.colorModel.hasAlpha()) {
@@ -23,16 +24,54 @@ fun main() {
         readln() == "yes"
     } else false
     val weight = getWeight() ?: return
+    println("Choose the position method (single, grid):")
+    val pos = readln()
+    if (!(pos == "single" || pos == "grid")) {
+        println("The position method input is invalid.")
+        return
+    }
+    val point = if (pos == "single") {
+        getWatermarkPosition(image, watermarkImage) ?: return
+    } else Point(0, 0)
     println("Input the output image filename (jpg or png extension):")
     val outfile = readln()
     if (!(outfile.endsWith("jpg") || outfile.endsWith("png"))) {
         println("The output file extension isn't \"jpg\" or \"png\".")
         return
     }
-    val finalImage = getWatermarkedImage(image, watermarkImage, weight, useAlpha, transparencyColor)
+    val finalImage = if (pos == "single") {
+        getWatermarkedImage(image, watermarkImage, weight, useAlpha, transparencyColor, point)
+    } else {
+        val xs = (0..image.width step watermarkImage.width).toList()
+        val ys = (0..image.height step watermarkImage.height).toList()
+
+        var wmi = image
+        ys.forEach {yit ->
+            xs.forEach {xit ->
+                wmi = getWatermarkedImage(wmi, watermarkImage, weight, useAlpha, transparencyColor, Point(xit, yit))
+            }
+        }
+        wmi
+    }
     val imageFile = File(outfile)
     ImageIO.write(finalImage, imageFile.extension, imageFile)
     println("The watermarked image $outfile has been created.")
+}
+
+fun getWatermarkPosition(image: BufferedImage, watermarkImage: BufferedImage): Point? {
+    println("Input the watermark position " +
+            "([x 0-${image.width - watermarkImage.width}] [y 0-${image.height - watermarkImage.height}]):")
+    try {
+        val (x, y) = readln().split(" ").map { it.toInt() }
+        if (!(x in 0..(image.width - watermarkImage.width) && y in 0.. (image.height-watermarkImage.height))) {
+            println("The position input is out of range.")
+            return null
+        }
+        return Point(x, y)
+    } catch (e: Exception) {
+        println("The position input is invalid.")
+        return null
+    }
 }
 
 fun watermarkTransparencyColor(): Color? {
@@ -86,12 +125,15 @@ fun getWeight(): Int? {
 }
 
 fun getWatermarkedImage(image: BufferedImage, watermarkImage: BufferedImage,
-                        weight: Int, useAlpha: Boolean, transparencyColor: Color?): BufferedImage {
+                        weight: Int, useAlpha: Boolean, transparencyColor: Color?, point: Point): BufferedImage {
     val cmbImage = BufferedImage(image.width, image.height, BufferedImage.TYPE_INT_RGB)
     for (y in 0 until image.height) {
         for (x in 0 until image.width) {
             val i = Color(image.getRGB(x, y))
-            val w = Color(watermarkImage.getRGB(x, y), useAlpha)
+            val w = if ((x >= point.x && x < point.x + watermarkImage.width) &&
+                (y >= point.y && y < point.y + watermarkImage.height)) {
+                Color(watermarkImage.getRGB(x - point.x, y - point.y), useAlpha)
+            } else i
             val color = if (w.alpha == 0 || w == transparencyColor) i else Color(
                 (weight * w.red + (100 - weight) * i.red) / 100,
                 (weight * w.green + (100 - weight) * i.green) / 100,
